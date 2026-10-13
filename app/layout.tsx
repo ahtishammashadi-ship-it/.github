@@ -3,8 +3,8 @@ import type { Metadata, Viewport } from 'next'
 import './globals.css'
 
 export const metadata: Metadata = {
-  title: 'Schema Lab — Authentication JSON Toolkit',
-  description: 'A focused browser lab for validating authentication JSON against JSON Schema.',
+  title: 'Nimbus Pay — Secure payment authorization',
+  description: 'Secure payment checkout with always-on OTP verification and real-time WebSocket authorization.',
   generator: 'v0.app',
   icons: {
     icon: [
