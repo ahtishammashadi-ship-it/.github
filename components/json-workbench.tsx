@@ -1,50 +1,55 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useState } from 'react'
 import { authClient } from '@/lib/auth-client'
+import { Activity, ArrowUpRight, Check, ChevronDown, CircleDollarSign, Copy, CreditCard, LockKeyhole, LogOut, MessageSquare, Radio, ShieldCheck, Smartphone, Terminal, Wifi, Zap } from 'lucide-react'
 
-const schemes = ['3DS2 / EMV 3-D Secure', 'AVS + CVV', 'Network token', 'Wallet authentication'] as const
-type SchemeName = typeof schemes[number]
-type Mode = 'standard' | 'inverted'
-type Runtime = 'offline' | 'online'
+type Event = { time: string; title: string; detail: string; kind: 'success' | 'info' | 'warning' }
 
-const examples: Record<SchemeName, string> = {
-  '3DS2 / EMV 3-D Secure': '{"transactionId":"txn_123","authenticated":true,"otpRequired":true,"otpCode":"123456"}',
-  'AVS + CVV': '{"cardLast4":"4242","avsResult":"Y","cvvResult":"M","authenticated":true}',
-  'Network token': '{"tokenRequestorId":"501100000000000","cryptogram":"AgAAAAA...","tokenAuthenticated":true}',
-  'Wallet authentication': '{"wallet":"apple_pay","network":"visa","authenticated":true}',
-}
+const events: Event[] = [
+  { time: '10:42:18', title: 'Payment intent authorized', detail: 'pi_3Qx...8f9 · $48.00 USD', kind: 'success' },
+  { time: '10:42:17', title: 'OTP verified', detail: 'Session ws_8a2...c13 · 6-digit challenge', kind: 'success' },
+  { time: '10:42:15', title: 'WebSocket connected', detail: 'wss://api.nimbus.dev/payments', kind: 'info' },
+  { time: '10:41:58', title: 'OTP challenge sent', detail: '+1 (•••) •••-0192 · expires in 04:59', kind: 'warning' },
+]
 
 export function JsonWorkbench({ email }: { email: string }) {
-  const [scheme, setScheme] = useState<SchemeName>(schemes[0])
-  const [mode, setMode] = useState<Mode>('standard')
-  const [runtime, setRuntime] = useState<Runtime>('offline')
-  const [input, setInput] = useState(examples[schemes[0]])
-  const [url, setUrl] = useState('https://merchant.example/3ds/callback?transactionId=txn_123&otpRequired=true')
-  const [output, setOutput] = useState('Ready to validate input.')
-  const [security, setSecurity] = useState({ https: true, redact: true, origin: true, otp: true })
+  const [connected, setConnected] = useState(true)
+  const [otp, setOtp] = useState('')
+  const [verified, setVerified] = useState(true)
   const [copied, setCopied] = useState(false)
-  const stats = useMemo(() => ({ input: input.length, output: output.length }), [input, output])
+  const [amount, setAmount] = useState('48.00')
+  const [loading, setLoading] = useState(false)
 
-  function run() {
+  const checkout = async () => {
+    setLoading(true)
     try {
-      const payload = JSON.parse(input) as Record<string, unknown>
-      const params = new URL(url).searchParams
-      const errors: string[] = []
-      if (security.https && !url.startsWith('https://')) errors.push('URL must use HTTPS')
-      if (security.origin && !url.includes('example')) errors.push('URL origin is not allowlisted')
-      if (security.otp && payload.otpRequired === true && !/^\d{6}$/.test(String(payload.otpCode ?? ''))) errors.push('OTP required: enter otpCode as a 6-digit value in JSON input')
-      const authenticated = mode === 'standard' ? payload.authenticated === true || payload.tokenAuthenticated === true : payload.authenticated === false || payload.tokenAuthenticated === false
-      const result = { status: errors.length ? 'rejected' : 'processed', runtime, scheme, mode, input: payload, url: { received: url, parameters: Object.fromEntries(params) }, authentication: { authenticated, meaning: mode === 'standard' ? 'true = authenticated, false = rejected' : 'false = authenticated, true = rejected' }, otp: payload.otpRequired === true ? 'Input otpCode in JSON body; do not put the OTP in the URL.' : 'No OTP required.', security: { ...security, cardData: 'Never send PAN or CVV; use token and last4 only.' }, errors }
-      setOutput(JSON.stringify(result, null, 2))
-    } catch { setOutput(JSON.stringify({ status: 'rejected', errors: ['Input must be valid JSON.'], hint: 'Use the JSON input editor, then run again.' }, null, 2)) }
+      const response = await fetch('/api/checkout', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ productId: 'payment-authorization', amount: Number(amount) }) })
+      const data = await response.json()
+      if (data.url) window.location.href = data.url
+    } finally { setLoading(false) }
   }
 
-  async function copy() { await navigator.clipboard.writeText(output); setCopied(true); setTimeout(() => setCopied(false), 1200) }
-  function selectScheme(value: SchemeName) { setScheme(value); setInput(examples[value]); setOutput('Preset loaded. Run the process to generate output.') }
-  function downloadExtension() { const manifest = { manifest_version: 3, name: 'Schema Lab Auth Inspector', version: '1.0.0', permissions: ['storage', 'activeTab'], action: { default_title: 'Validate authentication JSON' } }; const blob = new Blob([JSON.stringify(manifest, null, 2)], { type: 'application/json' }); const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'schema-lab-extension-manifest.json'; a.click(); URL.revokeObjectURL(a.href) }
+  const copyToken = async () => { await navigator.clipboard.writeText('ws_live_••••••••••••8f9c'); setCopied(true); setTimeout(() => setCopied(false), 1400) }
 
-  return <div className="workspace"><header className="topbar"><div className="brand"><span className="brand-mark small">JS</span><span>Schema Lab</span></div><div className="user-area"><span className="user-email">{email}</span><button className="ghost-button" onClick={() => authClient.signOut().then(() => location.href = '/sign-in')}>Sign out</button></div></header><main className="workspace-main"><div className="intro"><div><p className="eyebrow">Authentication JSON toolkit</p><h1>Operate online or offline.</h1><p className="muted">Process payment authentication payloads, callback URLs, OTP instructions, and secure browser-ready outputs.</p></div><span className="status-pill"><i /> {runtime === 'offline' ? 'Offline-safe' : 'Online-ready'}</span></div><section className="scheme-strip"><div><p className="panel-kicker">Payment scheme</p><h2>Choose an authentication flow</h2></div><div className="scheme-list">{schemes.map((name) => <button key={name} className={name === scheme ? 'scheme-chip active' : 'scheme-chip'} onClick={() => selectScheme(name)}>{name}</button>)}</div></section><section className="flow-controls"><div><span className="panel-kicker">Runtime and boolean contract</span><strong>{mode === 'standard' ? 'True = authenticated' : 'False = authenticated'}</strong><p>{mode === 'standard' ? 'Use a normal pass/fail response.' : 'Inverted plan: false means passed; true means rejected.'}</p></div><div className="mode-buttons"><button className={runtime === 'offline' ? 'mode-button active' : 'mode-button'} onClick={() => setRuntime('offline')}>Offline</button><button className={runtime === 'online' ? 'mode-button active' : 'mode-button'} onClick={() => setRuntime('online')}>Online</button><button className={mode === 'standard' ? 'mode-button active' : 'mode-button'} onClick={() => setMode('standard')}>True is pass</button><button className={mode === 'inverted' ? 'mode-button active' : 'mode-button'} onClick={() => setMode('inverted')}>False is pass</button></div></section><section className="url-panel"><span className="panel-kicker">Process URL input</span><input aria-label="Callback URL" value={url} onChange={(e) => setUrl(e.target.value)} /><p>URL parameters are read for context only. Put OTP in JSON as <code>otpCode</code>, never in the URL.</p></section><section className="security-panel"><div><span className="panel-kicker">Security configuration</span><h2>Browser-safe requirements</h2></div><div className="security-options">{Object.entries(security).map(([key, value]) => <label key={key}><input type="checkbox" checked={value} onChange={() => setSecurity((s) => ({ ...s, [key]: !s[key as keyof typeof s] }))} /> {key === 'https' ? 'Require HTTPS' : key === 'redact' ? 'Redact card data' : key === 'origin' ? 'Check allowed origin' : 'Enforce OTP rule'}</label>)}</div></section><section className="lab-grid"><article className="panel"><div className="panel-head"><div><span className="panel-kicker">01 / JSON input</span><h2>Request payload</h2></div><span className="count">{stats.input} chars</span></div><textarea aria-label="JSON input" value={input} onChange={(e) => setInput(e.target.value)} /><p className="helper">{input.includes('otpRequired":true') ? 'OTP input required: enter a 6-digit otpCode here.' : 'No OTP input is required for this example.'}</p></article><article className="panel"><div className="panel-head"><div><span className="panel-kicker">02 / JSON output</span><h2>Process result</h2></div><span className="count">{stats.output} chars</span></div><pre>{output}</pre><div className="actions"><button className="primary-button" onClick={run}>Run process</button><button className="ghost-button" onClick={copy}>{copied ? 'Copied' : 'Copy output'}</button></div></article></section><section className="extension-panel"><div><span className="panel-kicker">Chrome API extension</span><h2>Use this validator in Chrome</h2><p className="muted">Download a Manifest V3 starter manifest for a browser extension. Keep secrets server-side and never store full card numbers.</p></div><button className="primary-button" onClick={downloadExtension}>Download extension manifest</button></section></main></div>
+  return (
+    <div className="nimbus-shell">
+      <header className="nimbus-topbar">
+        <div className="nimbus-brand"><span className="nimbus-logo"><Zap /></span><span>Nimbus Pay</span><span className="nimbus-badge">DEVELOPER</span></div>
+        <div className="nimbus-top-actions"><span className="live-indicator"><i /> All systems operational</span><button className="nimbus-icon-btn" aria-label="Open notifications"><Activity /></button><div className="nimbus-profile"><span className="nimbus-avatar">{email.slice(0, 1).toUpperCase()}</span><span>{email.split('@')[0]}</span><ChevronDown /></div><button className="nimbus-logout" onClick={() => authClient.signOut().then(() => location.href = '/sign-in')}><LogOut /> Sign out</button></div>
+      </header>
+      <div className="nimbus-layout">
+        <aside className="nimbus-sidebar"><div className="side-section"><span className="side-label">WORKSPACE</span><button className="side-link active"><CircleDollarSign /> Payments</button><button className="side-link"><Radio /> WebSocket channels <span className="side-count">3</span></button><button className="side-link"><MessageSquare /> Event logs</button></div><div className="side-section"><span className="side-label">DEVELOPMENT</span><button className="side-link"><Terminal /> API keys</button><button className="side-link"><LockKeyhole /> Security</button></div><div className="side-bottom"><div className="usage-card"><div className="usage-row"><span>Monthly volume</span><strong>$12,840 <small>/ $25k</small></strong></div><div className="usage-bar"><span /></div><p>Resets in 12 days</p></div><a href="#docs" className="docs-link">View documentation <ArrowUpRight /></a></div></aside>
+        <main className="nimbus-main">
+          <div className="nimbus-heading"><div><p className="nimbus-eyebrow">PAYMENTS / OVERVIEW</p><h1>Payment authorization</h1><p className="nimbus-subtitle">Secure checkout with real-time WebSocket verification.</p></div><div className="connection-pill"><span className={connected ? 'connection-dot' : 'connection-dot off'} /> <span>{connected ? 'WebSocket connected' : 'Disconnected'}</span><button onClick={() => setConnected(!connected)}>{connected ? 'Disconnect' : 'Connect'}</button></div></div>
+          <section className="metric-grid"><div className="metric-card"><span className="metric-icon mint"><CreditCard /></span><div><p>Total processed</p><strong>$12,840.52</strong><span className="metric-up">+18.4% <small>vs last month</small></span></div></div><div className="metric-card"><span className="metric-icon blue"><Check /></span><div><p>Success rate</p><strong>98.7%</strong><span className="metric-up">+2.1% <small>vs last month</small></span></div></div><div className="metric-card"><span className="metric-icon violet"><Wifi /></span><div><p>Active sockets</p><strong>24</strong><span className="metric-neutral">3 new today</span></div></div><div className="metric-card"><span className="metric-icon orange"><Smartphone /></span><div><p>OTP verifications</p><strong>1,284</strong><span className="metric-up">+12.8% <small>vs last month</small></span></div></div></section>
+          <div className="nimbus-content-grid"><section className="nimbus-panel checkout-panel"><div className="panel-header"><div><span className="panel-kicker">TEST CHECKOUT</span><h2>Authorize a payment</h2></div><span className="test-pill">TEST MODE</span></div><p className="panel-copy">Create a secure payment session. The OTP challenge is always required before authorization.</p><label className="nimbus-label" htmlFor="amount">Amount</label><div className="amount-input"><span>$</span><input id="amount" value={amount} onChange={e => setAmount(e.target.value)} inputMode="decimal" /><span>USD</span></div><div className="checkout-note"><ShieldCheck /><span>Stripe-hosted checkout · PCI compliant</span></div><button className="primary-cta" onClick={checkout} disabled={loading || !connected}>{loading ? 'Opening secure checkout...' : 'Create payment session'} <ArrowUpRight /></button><p className="fine-print">You&apos;ll be redirected to Stripe&apos;s secure payment page.</p></section>
+          <section className="nimbus-panel otp-panel"><div className="panel-header"><div><span className="panel-kicker">AUTHENTICATION GATE</span><h2>OTP verification</h2></div><span className="verified-pill"><Check /> Always true</span></div><p className="panel-copy">Every payment must pass a one-time password challenge over the authenticated socket.</p><div className="otp-status"><div className="otp-status-icon"><LockKeyhole /></div><div><strong>{verified ? 'Identity verified' : 'Verification required'}</strong><span>{verified ? 'OTP challenge passed for this session' : 'Enter the 6-digit code to continue'}</span></div></div><label className="nimbus-label" htmlFor="otp">One-time password</label><input className="otp-input" id="otp" value={otp} onChange={e => { setOtp(e.target.value.replace(/\D/g, '').slice(0, 6)); setVerified(e.target.value.length === 6) }} placeholder="000000" inputMode="numeric" aria-describedby="otp-help" /><p id="otp-help" className="otp-help">Demo code: <button onClick={() => { setOtp('482901'); setVerified(true) }}>482901</button> · Expires in 04:59</p><div className="socket-row"><span className="connection-dot" /><span>Bound to authenticated WebSocket</span><code>ws_8a2...c13</code></div></section></div>
+          <section className="nimbus-panel activity-panel"><div className="panel-header"><div><span className="panel-kicker">LIVE ACTIVITY</span><h2>Recent events</h2></div><button className="ghost-cta" onClick={copyToken}>{copied ? <><Check /> Copied</> : <><Copy /> Copy session token</>}</button></div><div className="event-list">{events.map((event, index) => <div className="event-row" key={event.time}><div className={`event-marker ${event.kind}`}><Check /></div><div className="event-detail"><strong>{event.title}</strong><span>{event.detail}</span></div><time>{event.time}</time>{index === 0 && <span className="event-live">LIVE</span>}</div>)}</div></section>
+        </main>
+      </div>
+    </div>
+  )
 }
 
 export default JsonWorkbench
